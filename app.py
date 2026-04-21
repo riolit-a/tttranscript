@@ -9,19 +9,22 @@ st.set_page_config(page_title="TikTok to Transcript", page_icon="🎵")
 st.title("🎵 TikTok Audio Transcriber")
 st.write("Paste a TikTok link to download the audio and transcribe it using OpenAI's Whisper model.")
 
-# --- Sidebar ---
-st.sidebar.header("Configuration")
-api_key = st.sidebar.text_input("OpenAI API Key", type="password", help="Get this from platform.openai.com")
+# --- Secure API Key Handling ---
+# This looks for your key in the Streamlit Cloud Secrets vault
+if "OPENAI_API_KEY" in st.secrets:
+    api_key = st.secrets["OPENAI_API_KEY"]
+else:
+    st.error("⚠️ OpenAI API Key not found! Please add `OPENAI_API_KEY` to your Streamlit Secrets in the cloud dashboard.")
+    st.stop() # Stops the rest of the app from running until the key is found
 
 # --- Main UI ---
 tiktok_url = st.text_input("Enter TikTok URL:", placeholder="https://www.tiktok.com/@username/video/123456789")
 
 if st.button("Transcribe Audio"):
-    if not api_key:
-        st.error("Please enter your OpenAI API Key in the sidebar.")
-    elif not tiktok_url:
+    if not tiktok_url:
         st.warning("Please enter a valid TikTok URL.")
     else:
+        # The client now uses your secure, hidden key automatically
         client = OpenAI(api_key=api_key)
         audio_path = "temp_audio.mp3"
         
