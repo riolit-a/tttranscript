@@ -2,3 +2,4 @@ streamlit
 yt-dlp
 openai
 st-copy
+requests
