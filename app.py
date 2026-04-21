@@ -123,7 +123,7 @@ if st.session_state.final_transcript:
     if st.button("Generate Audio (Adam)"):
         with st.spinner("Generating voiceover with ElevenLabs..."):
             # Adam's Voice ID
-            voice_id = "pNInz6obpgDQGcFmaJcg"
+            voice_id = "IRHApOXLvnW57QJPQH2P"
             url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
             
             headers = {
