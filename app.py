@@ -2,36 +2,54 @@ import streamlit as st
 import yt_dlp
 import os
 from openai import OpenAI
+from st_copy import copy_button
 
 # Set up the Streamlit page
 st.set_page_config(page_title="TikTok to Transcript", page_icon="🎵")
 
-st.title("🎵 TikTok Audio Transcriber")
-st.write("Paste a TikTok link to download the audio and transcribe it using OpenAI's Whisper model.")
+st.title("🎵 TikTok Audio Transcriber & Editor")
+st.write("Paste a TikTok link to transcribe it. The app will automatically clean up the text, fix numbers, and format spacing.")
 
 # --- Secure API Key Handling ---
-# This looks for your key in the Streamlit Cloud Secrets vault
 if "OPENAI_API_KEY" in st.secrets:
     api_key = st.secrets["OPENAI_API_KEY"]
 else:
-    st.error("⚠️ OpenAI API Key not found! Please add `OPENAI_API_KEY` to your Streamlit Secrets in the cloud dashboard.")
-    st.stop() # Stops the rest of the app from running until the key is found
+    st.error("⚠️ OpenAI API Key not found! Please add `OPENAI_API_KEY` to your Streamlit Secrets.")
+    st.stop()
+
+# --- Custom System Prompt ---
+# This tells GPT exactly how to behave, using your rules and examples
+SYSTEM_PROMPT = """You are a precise script editor. Your job is to clean up raw video transcripts to make them highly readable while keeping changes minimal. 
+
+STRICT RULES:
+1. Fix minor mistakes and improve readability, but do not rewrite the whole script. Keep changes minimal.
+2. You MUST completely remove the phrase "The last one will blow your mind." (and any close variations).
+3. Convert spelled-out numbers used in lists to digits (e.g., change "Number one" to "Number 1"). Do not change "$4,000" to "4,000 dollars" unless improving readability. 
+4. Add proper paragraph spacing. Create a new paragraph for the intro, and a new paragraph for each numbered item.
+
+EXAMPLE INPUT:
+Things you throw away that are worth stupid money. The last one will blow your mind. Number one, Lego pieces. Old Lego pieces can be surprisingly valuable. Rare minifigures and discontinued parts are highly collectible. One of the most famous examples is the Mr. Gold minifigure released in 2013.
+
+EXAMPLE OUTPUT:
+Things you throw away that could be worth serious money. 
+
+Number 1, Lego pieces. Old Lego parts can be surprisingly valuable, especially rare minifigures and discontinued sets. One well known example is the Mister Gold minifigure released in 2013.
+"""
 
 # --- Main UI ---
 tiktok_url = st.text_input("Enter TikTok URL:", placeholder="https://www.tiktok.com/@username/video/123456789")
 
-if st.button("Transcribe Audio"):
+if st.button("Process Video"):
     if not tiktok_url:
         st.warning("Please enter a valid TikTok URL.")
     else:
-        # The client now uses your secure, hidden key automatically
         client = OpenAI(api_key=api_key)
         audio_path = "temp_audio.mp3"
         
         # Step 1: Download the Audio
         with st.spinner("Downloading audio from TikTok..."):
             ydl_opts = {
-                'format': 'best', # Grabs the best video/audio combo
+                'format': 'best',
                 'outtmpl': 'temp_audio.%(ext)s',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
@@ -45,7 +63,6 @@ if st.button("Transcribe Audio"):
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([tiktok_url])
-                st.success("Audio extracted successfully!")
             except Exception as e:
                 st.error(f"Error downloading from TikTok: {e}")
                 st.stop()
@@ -54,22 +71,37 @@ if st.button("Transcribe Audio"):
         with st.spinner("Transcribing with OpenAI Whisper..."):
             try:
                 with open(audio_path, "rb") as audio_file:
-                    # whisper-1 is the API endpoint for OpenAI's v2 large model
                     transcript = client.audio.transcriptions.create(
                         model="whisper-1", 
                         file=audio_file
                     )
                 
-                st.success("Transcription complete!")
+                raw_text = transcript.text
                 
-                st.markdown("### Full Transcript:")
-                # Use a text area so the user can easily copy the result
-                st.text_area(label="", value=transcript.text, height=300)
+                # Step 3: Edit with GPT-5.4
+                with st.spinner("Applying edits and formatting with GPT-5.4..."):
+                    response = client.chat.completions.create(
+                        model="gpt-5.4",
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": f"Please edit this transcript according to the rules:\n\n{raw_text}"}
+                        ]
+                    )
+                    final_text = response.choices[0].message.content
+
+                st.success("Done!")
+                
+                # Display the final text
+                st.markdown("### Final Script:")
+                st.text_area(label="Output", value=final_text, height=400, label_visibility="collapsed")
+                
+                # Copy button
+                copy_button(final_text, tooltip="Copy to clipboard", copied_label="Copied!")
                 
             except Exception as e:
-                st.error(f"Error during transcription: {e}")
+                st.error(f"Error during processing: {e}")
                 
             finally:
-                # Step 3: Clean up the temporary audio file
+                # Step 4: Clean up
                 if os.path.exists(audio_path):
                     os.remove(audio_path)
